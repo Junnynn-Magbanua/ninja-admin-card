@@ -44,16 +44,13 @@ interface CardOnFileResponse {
 
 class StickyIOService {
   private config: StickyConfig;
-  private proxyUrl: string;
 
   constructor() {
     this.config = {
-      apiUrl: import.meta.env.VITE_STICKY_API_URL || 'https://api.sticky.io',
+      apiUrl: import.meta.env.VITE_STICKY_API_URL || 'https://boostninja.sticky.io/api/v1',
       apiUsername: import.meta.env.VITE_STICKY_API_USERNAME || '',
       apiPassword: import.meta.env.VITE_STICKY_API_PASSWORD || ''
     };
-    // Use proxy server to avoid CORS issues
-    this.proxyUrl = import.meta.env.VITE_PROXY_URL || 'http://localhost:3001';
   }
 
   /**
@@ -71,20 +68,62 @@ class StickyIOService {
    */
   async lookupOrder(orderId: string): Promise<OrderLookupResponse> {
     try {
-      const response = await fetch(`${this.proxyUrl}/api/order/lookup`, {
+      const auth = btoa(`${this.config.apiUsername}:${this.config.apiPassword}`);
+
+      // Use order_view to get a single order by ID
+      const requestData = {
+        order_id: orderId
+      };
+
+      console.log('Sending order_view to Sticky.io:', requestData);
+
+      const response = await fetch(`${this.config.apiUrl}/order_view`, {
         method: 'POST',
-        headers: this.getAuthHeaders(),
-        body: JSON.stringify({
-          order_id: orderId
-        })
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Basic ${auth}`,
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify(requestData)
       });
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+      const data = await response.json();
+      console.log('Full Sticky.io response:', JSON.stringify(data, null, 2));
+      console.log('Response code:', data.response_code);
+
+      // Check if order was found (response_code 100 means success)
+      if (data.response_code === '100' && data.order_id) {
+        // Order data is at root level, not nested
+        const customerId = data.customer_id;
+
+        const result = {
+          success: true,
+          order_id: data.order_id || orderId,
+          customer_id: customerId,
+          customer_name: `${data.billing_first_name || ''} ${data.billing_last_name || ''}`.trim() || 'Unknown',
+          email: data.email_address || 'Unknown',
+          current_products: data.products?.map((p: any) =>
+            `${p.name || 'Product'} - $${p.price || 0}`
+          ) || [],
+          total_monthly: parseFloat(data.order_total || 0) || 0,
+          data: data
+        };
+
+        console.log('Returning success result:', result);
+        return result;
       }
 
-      const data = await response.json();
-      return data;
+      // Order not found or error
+      console.log('Order not found - response_code:', data.response_code);
+      return {
+        success: false,
+        order_id: orderId,
+        customer_name: 'Unknown',
+        email: 'Unknown',
+        current_products: [],
+        total_monthly: 0,
+        data: data
+      };
     } catch (error) {
       console.error('Error looking up order:', error);
       throw error;
@@ -97,20 +136,58 @@ class StickyIOService {
    */
   async submitCardOnFile(request: CardOnFileRequest): Promise<CardOnFileResponse> {
     try {
-      console.log('Submitting Card on File request:', request);
+      const auth = btoa(`${this.config.apiUsername}:${this.config.apiPassword}`);
 
-      const response = await fetch(`${this.proxyUrl}/api/order/card-on-file`, {
+      const payload: any = {
+        method: 'NewOrder',
+        campaignId: '1',
+        shippingId: '2',
+        offers: request.products.map(p => ({
+          offer_id: parseInt(p.offer_id),
+          product_id: parseInt(p.offer_id),
+          billing_model_id: parseInt(p.billing_model_id),
+          quantity: parseInt(p.quantity) || 1
+        })),
+        customerId: request.customer_id,
+        forceCustomerId: '1',
+        isUpsell: '1',
+        parentOrderId: request.order_id,
+        paymentType: 'CREDITCARD',
+        tranType: 'Sale',
+        testMode: '1'
+      };
+
+      if (request.new_upsell) payload.new_upsell = '1';
+      if (request.order_force_bill) payload.order_force_bill = '1';
+
+      console.log('Submitting Card on File request:', payload);
+
+      const response = await fetch(`${this.config.apiUrl}/new_order`, {
         method: 'POST',
-        headers: this.getAuthHeaders(),
-        body: JSON.stringify(request)
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Basic ${auth}`,
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify(payload)
       });
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
       const data = await response.json();
-      return data;
+      console.log('Card on File response:', data);
+
+      const isSuccess = !!(data.order_id || data.orderId) &&
+                       (data.error_found !== '1' && data.error_found !== 1) &&
+                       !data.error_message &&
+                       data.response_code !== 'D';
+
+      return {
+        success: isSuccess,
+        order_id: data.order_id || data.orderId || request.order_id,
+        message: isSuccess ?
+          'Order updated successfully' :
+          (data.error_message || data.decline_reason || 'Failed to update order'),
+        data: data
+      };
     } catch (error) {
       console.error('Error submitting card on file:', error);
       throw error;
@@ -123,9 +200,14 @@ class StickyIOService {
    */
   async getProducts(): Promise<any[]> {
     try {
-      const response = await fetch(`${this.proxyUrl}/api/products`, {
-        method: 'GET',
-        headers: this.getAuthHeaders()
+      const auth = btoa(`${this.config.apiUsername}:${this.config.apiPassword}`);
+
+      const response = await fetch(`${this.config.apiUrl}/product_index`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Basic ${auth}`
+        }
       });
 
       if (!response.ok) {
