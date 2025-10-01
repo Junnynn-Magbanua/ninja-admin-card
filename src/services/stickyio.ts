@@ -139,44 +139,20 @@ class StickyIOService {
   async submitCardOnFile(request: CardOnFileRequest): Promise<CardOnFileResponse> {
     try {
       const auth = btoa(`${this.config.apiUsername}:${this.config.apiPassword}`);
-      const order = request.orderDetails?.data || request.orderDetails || {};
+      const order = request.orderDetails?.data || {};
 
+      // Use the Card on File endpoint with simplified payload
       const payload: any = {
-        method: 'NewOrder',
-        campaignId: '1',
+        previousOrderId: request.order_id,
         shippingId: '2',
+        ipAddress: order.ip_address || '127.0.0.1',
+        campaignId: '1',
         offers: request.products.map(p => ({
           offer_id: parseInt(p.offer_id),
           product_id: parseInt(p.product_id),
           billing_model_id: parseInt(p.billing_model_id),
           quantity: parseInt(p.quantity) || 1
-        })),
-        // Customer information from parent order
-        customerId: request.customer_id,
-        forceCustomerId: '1',
-        isUpsell: '1',
-        parentOrderId: request.order_id,
-        email: order.email_address || '',
-        firstName: order.first_name || order.billing_first_name || '',
-        lastName: order.last_name || order.billing_last_name || '',
-        phone: order.customers_telephone || '',
-        billingFirstName: order.billing_first_name || '',
-        billingLastName: order.billing_last_name || '',
-        billingAddress1: '',
-        billingCity: '',
-        billingState: '',
-        billingZip: '',
-        billingCountry: '',
-        shippingFirstName: order.shipping_first_name || order.billing_first_name || '',
-        shippingLastName: order.shipping_last_name || order.billing_last_name || '',
-        shippingAddress1: '',
-        shippingCity: '',
-        shippingState: '',
-        shippingZip: '',
-        shippingCountry: '',
-        paymentType: 'CREDITCARD',
-        tranType: 'Sale',
-        testMode: '1'
+        }))
       };
 
       if (request.new_upsell) payload.new_upsell = '1';
@@ -184,7 +160,7 @@ class StickyIOService {
 
       console.log('Submitting Card on File request:', payload);
 
-      const response = await fetch(`${this.config.apiUrl}/new_order`, {
+      const response = await fetch(`${this.config.apiUrl}/new_order_card_on_file`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
