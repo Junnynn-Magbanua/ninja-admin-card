@@ -21,6 +21,7 @@ interface OrderLookupResponse {
 }
 
 interface Product {
+  product_id: string;
   offer_id: string;
   billing_model_id: string;
   quantity: string;
@@ -30,6 +31,7 @@ interface Product {
 interface CardOnFileRequest {
   order_id: string;
   customer_id: string;
+  orderDetails?: any;
   products: Product[];
   new_upsell?: boolean;
   order_force_bill?: boolean;
@@ -137,6 +139,7 @@ class StickyIOService {
   async submitCardOnFile(request: CardOnFileRequest): Promise<CardOnFileResponse> {
     try {
       const auth = btoa(`${this.config.apiUsername}:${this.config.apiPassword}`);
+      const order = request.orderDetails?.data || request.orderDetails || {};
 
       const payload: any = {
         method: 'NewOrder',
@@ -144,14 +147,33 @@ class StickyIOService {
         shippingId: '2',
         offers: request.products.map(p => ({
           offer_id: parseInt(p.offer_id),
-          product_id: parseInt(p.offer_id),
+          product_id: parseInt(p.product_id),
           billing_model_id: parseInt(p.billing_model_id),
           quantity: parseInt(p.quantity) || 1
         })),
+        // Customer information from parent order
         customerId: request.customer_id,
         forceCustomerId: '1',
         isUpsell: '1',
         parentOrderId: request.order_id,
+        email: order.email_address || '',
+        firstName: order.first_name || order.billing_first_name || '',
+        lastName: order.last_name || order.billing_last_name || '',
+        phone: order.customers_telephone || '',
+        billingFirstName: order.billing_first_name || '',
+        billingLastName: order.billing_last_name || '',
+        billingAddress1: '',
+        billingCity: '',
+        billingState: '',
+        billingZip: '',
+        billingCountry: '',
+        shippingFirstName: order.shipping_first_name || order.billing_first_name || '',
+        shippingLastName: order.shipping_last_name || order.billing_last_name || '',
+        shippingAddress1: '',
+        shippingCity: '',
+        shippingState: '',
+        shippingZip: '',
+        shippingCountry: '',
         paymentType: 'CREDITCARD',
         tranType: 'Sale',
         testMode: '1'

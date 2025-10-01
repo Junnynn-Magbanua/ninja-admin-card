@@ -13,6 +13,7 @@ import { stickyIOService, type OrderLookupResponse } from "@/services/stickyio";
 interface Product {
   id: string;
   offer_id: string;
+  product_id: string; // Added: Sticky.io product_id (different from offer_id)
   name: string;
   price: number;
   description: string;
@@ -24,61 +25,66 @@ interface Product {
   }[];
 }
 
-// Sample products - these would typically come from Sticky.io API
+// Products mapped to Sticky.io with correct IDs
 const PRODUCTS: Product[] = [
   {
     id: "1",
+    product_id: "6",
     offer_id: "1",
     name: "Ninja Boost PRO",
     price: 99,
     description: "Professional AI Search Optimization",
     billing_models: [
-      { id: "1", name: "Monthly Subscription", type: "recurring", rebill_amount: 99 },
+      { id: "3", name: "Monthly Subscription", type: "recurring", rebill_amount: 99 },
       { id: "2", name: "One-Time Payment", type: "one_time" }
     ]
   },
   {
     id: "2",
-    offer_id: "2",
+    product_id: "11",
+    offer_id: "1",
     name: "Advanced Presence",
     price: 39,
     description: "Show up on 125+ platforms",
     billing_models: [
       { id: "3", name: "Monthly Subscription", type: "recurring", rebill_amount: 39 },
-      { id: "4", name: "One-Time Payment", type: "one_time" }
+      { id: "2", name: "One-Time Payment", type: "one_time" }
     ]
   },
   {
     id: "3",
-    offer_id: "3",
+    product_id: "12",
+    offer_id: "1",
     name: "Google AI-Posting Pro",
     price: 79,
     description: "Weekly AI-generated Google posts",
     billing_models: [
-      { id: "5", name: "Monthly Subscription", type: "recurring", rebill_amount: 79 },
-      { id: "6", name: "One-Time Payment", type: "one_time" }
+      { id: "3", name: "Monthly Subscription", type: "recurring", rebill_amount: 79 },
+      { id: "2", name: "One-Time Payment", type: "one_time" }
     ]
   },
   {
     id: "4",
-    offer_id: "4",
+    product_id: "10",
+    offer_id: "1",
     name: "Power Reviews",
     price: 29,
     description: "Automated 5-star review generation",
     billing_models: [
-      { id: "7", name: "Monthly Subscription", type: "recurring", rebill_amount: 29 },
-      { id: "8", name: "One-Time Payment", type: "one_time" }
+      { id: "3", name: "Monthly Subscription", type: "recurring", rebill_amount: 29 },
+      { id: "2", name: "One-Time Payment", type: "one_time" }
     ]
   },
   {
     id: "5",
-    offer_id: "5",
+    product_id: "13",
+    offer_id: "1",
     name: "ChatGPT AI Booster",
     price: 49,
     description: "Dominate AI search results",
     billing_models: [
-      { id: "9", name: "Monthly Subscription", type: "recurring", rebill_amount: 49 },
-      { id: "10", name: "One-Time Payment", type: "one_time" }
+      { id: "3", name: "Monthly Subscription", type: "recurring", rebill_amount: 49 },
+      { id: "2", name: "One-Time Payment", type: "one_time" }
     ]
   }
 ];
@@ -193,7 +199,9 @@ const CardOnFile = () => {
       const apiRequest = {
         order_id: orderId,
         customer_id: orderDetails.customer_id,
+        orderDetails: orderDetails, // Pass full order details for customer info
         products: selectedProducts.map((item, index) => ({
+          product_id: item.product.product_id,
           offer_id: item.product.offer_id,
           billing_model_id: item.billing_model_id,
           quantity: item.quantity.toString(),
