@@ -151,7 +151,8 @@ class StickyIOService {
           offer_id: parseInt(p.offer_id),
           product_id: parseInt(p.product_id),
           billing_model_id: parseInt(p.billing_model_id),
-          quantity: parseInt(p.quantity) || 1
+          quantity: parseInt(p.quantity) || 1,
+          step_num: p.step_num || '2'
         }))
       };
 
