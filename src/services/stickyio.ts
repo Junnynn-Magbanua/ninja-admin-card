@@ -146,7 +146,7 @@ class StickyIOService {
         previousOrderId: request.order_id,
         shippingId: '2',
         ipAddress: order.ip_address || '127.0.0.1',
-        campaignId: '1',
+        campaignId: '2',
         offers: request.products.map(p => ({
           offer_id: parseInt(p.offer_id),
           product_id: parseInt(p.product_id),
