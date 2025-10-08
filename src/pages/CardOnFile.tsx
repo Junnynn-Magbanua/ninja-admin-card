@@ -86,6 +86,39 @@ const PRODUCTS: Product[] = [
       { id: "3", name: "Monthly Subscription", type: "recurring", rebill_amount: 49 },
       { id: "2", name: "One-Time Payment", type: "one_time" }
     ]
+  },
+  {
+    id: "6",
+    product_id: "14",
+    offer_id: "1",
+    name: "Essential Set Up - Ninja Boost",
+    price: 99,
+    description: "One-time Essential tier setup fee",
+    billing_models: [
+      { id: "2", name: "One-Time Payment", type: "one_time" }
+    ]
+  },
+  {
+    id: "7",
+    product_id: "15",
+    offer_id: "1",
+    name: "PRO Set Up - Ninja Boost",
+    price: 149,
+    description: "One-time PRO tier setup fee",
+    billing_models: [
+      { id: "2", name: "One-Time Payment", type: "one_time" }
+    ]
+  },
+  {
+    id: "8",
+    product_id: "16",
+    offer_id: "1",
+    name: "ELITE Set Up - Ninja Boost",
+    price: 299,
+    description: "One-time ELITE tier setup fee",
+    billing_models: [
+      { id: "2", name: "One-Time Payment", type: "one_time" }
+    ]
   }
 ];
 
@@ -171,6 +204,15 @@ const CardOnFile = () => {
       const billingModel = item.product.billing_models.find(bm => bm.id === item.billing_model_id);
       return sum + (billingModel?.rebill_amount || item.product.price) * item.quantity;
     }, 0);
+  };
+
+  const resetForm = () => {
+    setOrderId("");
+    setOrderFound(false);
+    setOrderDetails(null);
+    setSelectedProducts([]);
+    setNewUpsell(false);
+    setOrderForceBill(false);
   };
 
   const handleSubmitOrder = async () => {
@@ -289,7 +331,7 @@ const CardOnFile = () => {
                 disabled={orderFound}
               />
             </div>
-            <div className="flex items-end">
+            <div className="flex items-end gap-3">
               <Button
                 onClick={handleOrderLookup}
                 disabled={isLoading || orderFound}
@@ -298,6 +340,15 @@ const CardOnFile = () => {
               >
                 {isLoading ? "Searching..." : "Lookup Order"}
               </Button>
+              {orderFound && (
+                <Button
+                  onClick={resetForm}
+                  variant="outline"
+                  className="h-12 px-8 border-2"
+                >
+                  Search New Order
+                </Button>
+              )}
             </div>
           </div>
 
