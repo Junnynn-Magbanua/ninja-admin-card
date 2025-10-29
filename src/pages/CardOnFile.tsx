@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "@/hooks/use-toast";
-import { ShieldCheckIcon, SearchIcon, CreditCardIcon, PackageIcon, AlertCircleIcon } from "lucide-react";
+import { ShieldCheckIcon, SearchIcon, CreditCardIcon, PackageIcon, AlertCircleIcon, PlusIcon } from "lucide-react";
 import { stickyIOService, type OrderLookupResponse } from "@/services/stickyio";
 
 interface Product {
@@ -136,6 +136,21 @@ const CardOnFile = () => {
   const [newUpsell, setNewUpsell] = useState(false);
   const [orderForceBill, setOrderForceBill] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Payment method management state
+  const [showPaymentForm, setShowPaymentForm] = useState(false);
+  const [paymentAction, setPaymentAction] = useState<'update' | 'add'>('update');
+  const [cardNumber, setCardNumber] = useState("");
+  const [cardMonth, setCardMonth] = useState("");
+  const [cardYear, setCardYear] = useState("");
+  const [cardCvv, setCardCvv] = useState("");
+  const [billingFirstName, setBillingFirstName] = useState("");
+  const [billingLastName, setBillingLastName] = useState("");
+  const [billingAddress, setBillingAddress] = useState("");
+  const [billingCity, setBillingCity] = useState("");
+  const [billingState, setBillingState] = useState("");
+  const [billingZip, setBillingZip] = useState("");
+  const [billingCountry, setBillingCountry] = useState("US");
 
   const handleOrderLookup = async () => {
     if (!orderId.trim()) {
@@ -286,6 +301,100 @@ const CardOnFile = () => {
     }
   };
 
+  const handlePaymentMethodSubmit = async () => {
+    if (!orderDetails?.customer_id) {
+      toast({
+        title: "Missing Customer ID",
+        description: "Please lookup an order first",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Validate required card fields
+    if (!cardNumber || !cardMonth || !cardYear || !cardCvv) {
+      toast({
+        title: "Missing Card Information",
+        description: "Please fill in all required card fields",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Clean card number (remove spaces and dashes)
+    const cleanCardNumber = cardNumber.replace(/[\s-]/g, '');
+
+    // Validate card number length (13-19 digits)
+    if (cleanCardNumber.length < 13 || cleanCardNumber.length > 19) {
+      toast({
+        title: "Invalid Card Number",
+        description: "Card number must be between 13 and 19 digits",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      const request = {
+        customer_id: orderDetails.customer_id,
+        order_id: orderId,
+        card_number: cleanCardNumber,
+        card_month: cardMonth.padStart(2, '0'),
+        card_year: cardYear.length === 2 ? cardYear : cardYear.slice(-2),
+        card_cvv: cardCvv,
+        billing_first_name: billingFirstName,
+        billing_last_name: billingLastName,
+        billing_address: billingAddress,
+        billing_city: billingCity,
+        billing_state: billingState,
+        billing_zip: billingZip,
+        billing_country: billingCountry
+      };
+
+      const result = paymentAction === 'update'
+        ? await stickyIOService.updatePaymentMethod(request)
+        : await stickyIOService.addPaymentMethod(request);
+
+      if (result.success) {
+        toast({
+          title: "Success!",
+          description: result.message
+        });
+
+        // Reset payment form
+        setShowPaymentForm(false);
+        setCardNumber("");
+        setCardMonth("");
+        setCardYear("");
+        setCardCvv("");
+        setBillingFirstName("");
+        setBillingLastName("");
+        setBillingAddress("");
+        setBillingCity("");
+        setBillingState("");
+        setBillingZip("");
+        setBillingCountry("US");
+      } else {
+        toast({
+          title: "Payment Method Update Failed",
+          description: result.message || "Please try a different approach or contact support",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('Error managing payment method:', error);
+      toast({
+        title: "Error",
+        description: "Failed to process payment method. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background font-poppins">
       {/* Header */}
@@ -371,6 +480,227 @@ const CardOnFile = () => {
             </div>
           )}
         </Card>
+
+        {/* Payment Method Management Section */}
+        {orderFound && (
+          <Card className="p-6 mb-6 shadow-elegant">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <CreditCardIcon className="w-5 h-5 text-ninja-blue" />
+                <h2 className="text-xl font-bold">Payment Method Management</h2>
+              </div>
+              {!showPaymentForm && (
+                <Button
+                  onClick={() => {
+                    setPaymentAction('update');
+                    setShowPaymentForm(true);
+                  }}
+                  variant="ninja"
+                  size="sm"
+                >
+                  <CreditCardIcon className="w-4 h-4 mr-2" />
+                  Update Payment Method
+                </Button>
+              )}
+            </div>
+
+            {!showPaymentForm ? (
+              <div className="bg-ninja-blue/10 border border-ninja-blue/20 rounded-lg p-4">
+                <p className="text-sm">
+                  <strong>Current Card on File:</strong> {orderDetails?.data?.credit_card_number || 'No card information available'}
+                </p>
+                <p className="text-sm text-muted-foreground mt-2">
+                  Update the payment method for this subscription. The system will automatically find and update the most recent recurring order, which applies the new payment method to the entire subscription.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="bg-ninja-blue/10 border border-ninja-blue/20 rounded-lg p-3">
+                  <p className="text-sm font-semibold">
+                    🔄 Updating payment method for: <span className="text-ninja-blue">{orderDetails?.customer_name}</span>
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    The system will automatically update the most recent recurring order in the subscription. This ensures the new payment method is applied to all future charges.
+                  </p>
+                </div>
+
+                {/* Card Information */}
+                <div className="space-y-4">
+                  <h3 className="font-bold text-lg">Card Information</h3>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div className="md:col-span-2">
+                      <Label htmlFor="cardNumber" className="font-medium">Card Number *</Label>
+                      <Input
+                        id="cardNumber"
+                        value={cardNumber}
+                        onChange={(e) => setCardNumber(e.target.value)}
+                        placeholder="4111 1111 1111 1111"
+                        maxLength={19}
+                        className="h-12 rounded-xl border-2 focus:border-ninja-blue"
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Test cards: 4111111111111111 (Visa), 5424000000000015 (MC)
+                      </p>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="cardMonth" className="font-medium">Expiry Month *</Label>
+                      <Input
+                        id="cardMonth"
+                        value={cardMonth}
+                        onChange={(e) => setCardMonth(e.target.value)}
+                        placeholder="MM"
+                        maxLength={2}
+                        className="h-12 rounded-xl border-2 focus:border-ninja-blue"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="cardYear" className="font-medium">Expiry Year *</Label>
+                      <Input
+                        id="cardYear"
+                        value={cardYear}
+                        onChange={(e) => setCardYear(e.target.value)}
+                        placeholder="YY or YYYY"
+                        maxLength={4}
+                        className="h-12 rounded-xl border-2 focus:border-ninja-blue"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="cardCvv" className="font-medium">CVV *</Label>
+                      <Input
+                        id="cardCvv"
+                        value={cardCvv}
+                        onChange={(e) => setCardCvv(e.target.value)}
+                        placeholder="123"
+                        maxLength={4}
+                        className="h-12 rounded-xl border-2 focus:border-ninja-blue"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Billing Information */}
+                <div className="border-t pt-4 space-y-4">
+                  <h3 className="font-bold text-lg">Billing Information (Optional)</h3>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="billingFirstName" className="font-medium">First Name</Label>
+                      <Input
+                        id="billingFirstName"
+                        value={billingFirstName}
+                        onChange={(e) => setBillingFirstName(e.target.value)}
+                        placeholder="John"
+                        className="h-12 rounded-xl border-2"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="billingLastName" className="font-medium">Last Name</Label>
+                      <Input
+                        id="billingLastName"
+                        value={billingLastName}
+                        onChange={(e) => setBillingLastName(e.target.value)}
+                        placeholder="Doe"
+                        className="h-12 rounded-xl border-2"
+                      />
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <Label htmlFor="billingAddress" className="font-medium">Address</Label>
+                      <Input
+                        id="billingAddress"
+                        value={billingAddress}
+                        onChange={(e) => setBillingAddress(e.target.value)}
+                        placeholder="123 Main St"
+                        className="h-12 rounded-xl border-2"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="billingCity" className="font-medium">City</Label>
+                      <Input
+                        id="billingCity"
+                        value={billingCity}
+                        onChange={(e) => setBillingCity(e.target.value)}
+                        placeholder="New York"
+                        className="h-12 rounded-xl border-2"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="billingState" className="font-medium">State</Label>
+                      <Input
+                        id="billingState"
+                        value={billingState}
+                        onChange={(e) => setBillingState(e.target.value)}
+                        placeholder="NY"
+                        maxLength={2}
+                        className="h-12 rounded-xl border-2"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="billingZip" className="font-medium">ZIP Code</Label>
+                      <Input
+                        id="billingZip"
+                        value={billingZip}
+                        onChange={(e) => setBillingZip(e.target.value)}
+                        placeholder="10001"
+                        className="h-12 rounded-xl border-2"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="billingCountry" className="font-medium">Country</Label>
+                      <Input
+                        id="billingCountry"
+                        value={billingCountry}
+                        onChange={(e) => setBillingCountry(e.target.value)}
+                        placeholder="US"
+                        maxLength={2}
+                        className="h-12 rounded-xl border-2"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex gap-3 pt-4">
+                  <Button
+                    onClick={handlePaymentMethodSubmit}
+                    disabled={isLoading}
+                    variant="ninja"
+                    className="flex-1 h-12"
+                  >
+                    {isLoading ? "Processing..." : '🔄 Update Payment Method'}
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setShowPaymentForm(false);
+                      setCardNumber("");
+                      setCardMonth("");
+                      setCardYear("");
+                      setCardCvv("");
+                      setBillingFirstName("");
+                      setBillingLastName("");
+                      setBillingAddress("");
+                      setBillingCity("");
+                      setBillingState("");
+                      setBillingZip("");
+                      setBillingCountry("US");
+                    }}
+                    variant="outline"
+                    className="h-12 px-8 border-2"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+          </Card>
+        )}
 
         {/* Product Selection Section */}
         {orderFound && (

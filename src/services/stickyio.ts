@@ -44,6 +44,28 @@ interface CardOnFileResponse {
   data?: any;
 }
 
+interface PaymentMethodRequest {
+  customer_id: string;
+  order_id: string;
+  card_number: string;
+  card_month: string;
+  card_year: string;
+  card_cvv: string;
+  billing_first_name?: string;
+  billing_last_name?: string;
+  billing_address?: string;
+  billing_city?: string;
+  billing_state?: string;
+  billing_zip?: string;
+  billing_country?: string;
+}
+
+interface PaymentMethodResponse {
+  success: boolean;
+  message: string;
+  data?: any;
+}
+
 class StickyIOService {
   private config: StickyConfig;
 
@@ -194,6 +216,206 @@ class StickyIOService {
   }
 
   /**
+   * Detect card type from card number
+   * Matches working version's simpler implementation
+   * @param cardNumber - The credit card number
+   */
+  private detectCardType(cardNumber: string): string {
+    if (!cardNumber) return 'visa';
+    const firstDigit = cardNumber.charAt(0);
+    switch(firstDigit) {
+      case '3': return 'amex';
+      case '4': return 'visa';
+      case '5': return 'master';
+      case '6': return 'discover';
+      default: return 'visa';
+    }
+  }
+
+  /**
+   * Find orders with specific criteria (e.g., is_recurring)
+   * @param customerId - The customer ID
+   * @param criteria - Search criteria (e.g., 'is_recurring')
+   */
+  async findOrders(customerId: string, criteria: string = 'is_recurring'): Promise<any> {
+    try {
+      const auth = btoa(`${this.config.apiUsername}:${this.config.apiPassword}`);
+
+      const requestData: any = {
+        customer_id: customerId
+      };
+
+      if (criteria === 'is_recurring') {
+        requestData.is_recurring = '1';
+      }
+
+      console.log('Finding orders with criteria:', requestData);
+
+      const response = await fetch(`${this.config.apiUrl}/order_find`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Basic ${auth}`,
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify(requestData)
+      });
+
+      const data = await response.json();
+      console.log('Order find response:', data);
+
+      return data;
+    } catch (error) {
+      console.error('Error finding orders:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update payment method for a recurring order
+   * First finds the most recent recurring order, then updates it
+   * @param request - Payment method details
+   */
+  async updatePaymentMethod(request: PaymentMethodRequest): Promise<PaymentMethodResponse> {
+    try {
+      const auth = btoa(`${this.config.apiUsername}:${this.config.apiPassword}`);
+
+      console.log('=== Payment Method Update Process ===');
+      console.log('Customer ID:', request.customer_id);
+      console.log('Order ID:', request.order_id);
+
+      // Step 1: Find the most recent recurring order
+      console.log('\n[1/3] Finding most recent recurring order...');
+      const ordersData = await this.findOrders(request.customer_id, 'is_recurring');
+
+      // Extract the most recent order ID
+      let targetOrderId = request.order_id;
+
+      if (ordersData.order_ids && Array.isArray(ordersData.order_ids) && ordersData.order_ids.length > 0) {
+        targetOrderId = ordersData.order_ids[0];
+        console.log('✓ Found most recent recurring order:', targetOrderId);
+      } else if (ordersData.order_id) {
+        targetOrderId = ordersData.order_id;
+        console.log('✓ Using single order ID from response:', targetOrderId);
+      } else {
+        console.log('⚠ No recurring orders found, using provided order ID:', targetOrderId);
+      }
+
+      // Step 2: Prepare payment data
+      console.log('\n[2/3] Preparing payment data...');
+
+      // Format expiration date as MMYY (4 digits) - Sticky.io requirement
+      const expYear = request.card_year.length === 4 ? request.card_year.slice(-2) : request.card_year;
+      const expirationDate = request.card_month.padStart(2, '0') + expYear.padStart(2, '0');
+
+      // Detect card type
+      const creditCardType = this.detectCardType(request.card_number);
+
+      console.log('Card type:', creditCardType);
+      console.log('Card ending in:', request.card_number.slice(-4));
+      console.log('Expiration:', expirationDate);
+
+      // Step 3: Prepare the order_update payload
+      const payload = {
+        order_id: {
+          [targetOrderId]: {
+            cc_payment_type: creditCardType,
+            cc_number: request.card_number,
+            cc_expiration_date: expirationDate
+          }
+        }
+      };
+
+      console.log('\n[3/3] Updating payment method...');
+
+      const response = await fetch(`${this.config.apiUrl}/order_update`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Basic ${auth}`,
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const responseText = await response.text();
+      console.log('Sticky.io response:', responseText);
+
+      let result;
+      try {
+        result = JSON.parse(responseText);
+      } catch (e) {
+        result = { raw_response: responseText };
+      }
+
+      // Check for success - response_code 100 indicates success
+      const isSuccess = result.response_code === '100';
+
+      console.log('Order validation:', {
+        responseCode: result.response_code,
+        isSuccess: isSuccess
+      });
+
+      let message = 'Payment method updated successfully';
+
+      if (!isSuccess) {
+        // Handle specific error codes
+        if (result.response_code === '911') {
+          message = 'The payment information is the same as the current card on file';
+        } else if (result.response_code === '343') {
+          message = 'Invalid payment information provided';
+        } else {
+          message = `Failed to update payment method (Code: ${result.response_code})`;
+        }
+
+        // Check for field-specific errors
+        if (result.order_id && result.order_id[targetOrderId]) {
+          const fieldErrors = result.order_id[targetOrderId];
+          const errorFields = [];
+
+          if (fieldErrors.cc_payment_type?.response_code === '343') {
+            errorFields.push('card type');
+          }
+          if (fieldErrors.cc_number?.response_code === '343') {
+            errorFields.push('card number');
+          }
+          if (fieldErrors.cc_expiration_date?.response_code === '343') {
+            errorFields.push('expiration date');
+          }
+
+          if (errorFields.length > 0) {
+            message = `Invalid ${errorFields.join(', ')}`;
+          }
+        }
+      }
+
+      if (isSuccess) {
+        console.log('✓ Payment method updated successfully');
+      } else {
+        console.log('✗ Update failed:', message);
+      }
+
+      return {
+        success: isSuccess,
+        message: message,
+        data: result
+      };
+    } catch (error) {
+      console.error('Payment method update error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Add a new payment method (currently same as update)
+   * @param request - Payment method details
+   */
+  async addPaymentMethod(request: PaymentMethodRequest): Promise<PaymentMethodResponse> {
+    // For now, adding a payment method uses the same logic as updating
+    return this.updatePaymentMethod(request);
+  }
+
+  /**
    * Get all available products from Sticky.io
    * Note: This may require a different endpoint depending on your Sticky.io setup
    */
@@ -226,4 +448,4 @@ class StickyIOService {
 export const stickyIOService = new StickyIOService();
 
 // Export types for use in components
-export type { OrderLookupResponse, CardOnFileRequest, CardOnFileResponse, Product };
+export type { OrderLookupResponse, CardOnFileRequest, CardOnFileResponse, Product, PaymentMethodRequest, PaymentMethodResponse };
